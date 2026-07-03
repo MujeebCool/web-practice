@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MOCK_USER } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
 
 const navItems = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
@@ -26,16 +27,42 @@ const navItems = [
  *
  * Fixed on desktop (w-64), slide-in drawer on mobile.
  * Active link highlighting via usePathname().
- * Sign Out clears cookie and redirects to homepage.
+ * Sign Out uses Supabase auth.signOut() and redirects to homepage.
+ * User name is fetched from Supabase profile.
  */
 export default function Sidebar({ open, onClose }) {
   const pathname = usePathname();
   const router = useRouter();
+  const supabase = createClient();
+  const [userName, setUserName] = useState("");
 
-  const handleSignOut = () => {
-    // Clear auth cookie
-    document.cookie = "ilm_token=; path=/; max-age=0";
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Try profile table first, fall back to auth metadata
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", user.id)
+          .single();
+
+        setUserName(
+          profile?.full_name ||
+          user.user_metadata?.full_name ||
+          user.email?.split("@")[0] ||
+          "Student"
+        );
+      }
+    };
+
+    fetchUser();
+  }, [supabase]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
     router.push("/");
+    router.refresh();
   };
 
   const isActive = (href) => {
@@ -61,7 +88,7 @@ export default function Sidebar({ open, onClose }) {
       <div className="mx-4 rounded-xl bg-white/5 px-4 py-3">
         <p className="text-xs text-white/40">Welcome back,</p>
         <p className="mt-0.5 text-sm font-medium text-white">
-          {MOCK_USER.name}
+          {userName || "Loading…"}
         </p>
       </div>
 

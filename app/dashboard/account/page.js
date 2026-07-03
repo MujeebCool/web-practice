@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, Loader2, AlertTriangle } from "lucide-react";
-import { MOCK_USER } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
 
 /**
  * Toast — Simple auto-dismissing notification
@@ -32,7 +32,7 @@ function Toast({ message, onDismiss }) {
 /**
  * CancelModal — Subscription cancellation confirmation
  */
-function CancelModal({ onClose, onConfirm }) {
+function CancelModal({ onClose, onConfirm, renewalDate }) {
   const [confirming, setConfirming] = useState(false);
 
   const handleConfirm = async () => {
@@ -63,7 +63,7 @@ function CancelModal({ onClose, onConfirm }) {
           Are you sure you want to cancel?
         </h3>
         <p className="mt-2 text-sm text-muted">
-          Your access continues until {MOCK_USER.renewalDate}.
+          Your access continues until {renewalDate}.
         </p>
         <div className="mt-6 flex gap-3">
           <button
@@ -98,15 +98,25 @@ function CancelModal({ onClose, onConfirm }) {
  * Two-column layout:
  * - Left: Profile settings (personal info + password)
  * - Right: Subscription card with cancel flow
+ *
+ * Loads user data from Supabase profiles table.
  */
 export default function AccountPage() {
+  const supabase = createClient();
+
   // Profile form state
-  const [profile, setProfile] = useState({
-    name: MOCK_USER.name,
-    email: MOCK_USER.email,
-  });
+  const [profile, setProfile] = useState({ name: "", email: "" });
   const [profileErrors, setProfileErrors] = useState({});
   const [profileLoading, setProfileLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
+
+  // Subscription data
+  const [subscription, setSubscription] = useState({
+    plan: "free",
+    memberSince: "",
+    renewalDate: "",
+    pricePerMonth: 0,
+  });
 
   // Password form state
   const [password, setPassword] = useState({
@@ -123,6 +133,57 @@ export default function AccountPage() {
   // Cancel modal
   const [showCancel, setShowCancel] = useState(false);
   const [cancelled, setCancelled] = useState(false);
+
+  // Fetch user profile on mount
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (user) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+
+        if (profileData) {
+          setProfile({
+            name: profileData.full_name || "",
+            email: profileData.email || user.email || "",
+          });
+          setSubscription({
+            plan: profileData.plan || "free",
+            memberSince: new Date(profileData.created_at).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }),
+            renewalDate: profileData.plan !== "free"
+              ? new Date(
+                  new Date(profileData.created_at).setFullYear(
+                    new Date(profileData.created_at).getFullYear() + 1
+                  )
+                ).toLocaleDateString("en-GB", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "—",
+            pricePerMonth: profileData.plan === "annual" ? 12 : profileData.plan === "monthly" ? 15 : 0,
+          });
+        } else {
+          // Fallback to auth metadata if profile doesn't exist yet
+          setProfile({
+            name: user.user_metadata?.full_name || user.email?.split("@")[0] || "",
+            email: user.email || "",
+          });
+        }
+      }
+      setPageLoading(false);
+    };
+
+    fetchProfile();
+  }, [supabase]);
 
   // Profile validation
   const validateProfile = () => {
@@ -151,9 +212,27 @@ export default function AccountPage() {
     if (Object.keys(errs).length > 0) return;
 
     setProfileLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (user) {
+      // Update profile in database
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          full_name: profile.name,
+          email: profile.email,
+        })
+        .eq("id", user.id);
+
+      if (error) {
+        setProfileErrors({ name: error.message });
+      } else {
+        setToast("Changes saved");
+      }
+    }
+
     setProfileLoading(false);
-    setToast("Changes saved");
   };
 
   const handlePasswordSubmit = async (e) => {
@@ -163,10 +242,19 @@ export default function AccountPage() {
     if (Object.keys(errs).length > 0) return;
 
     setPasswordLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
+
+    const { error } = await supabase.auth.updateUser({
+      password: password.newPassword,
+    });
+
+    if (error) {
+      setPasswordErrors({ current: error.message });
+    } else {
+      setPassword({ current: "", newPassword: "", confirm: "" });
+      setToast("Password updated");
+    }
+
     setPasswordLoading(false);
-    setPassword({ current: "", newPassword: "", confirm: "" });
-    setToast("Password updated");
   };
 
   const handleCancelConfirm = () => {
@@ -188,6 +276,14 @@ export default function AccountPage() {
     "Monthly live Q&A sessions",
     "iOS and Android app access",
   ];
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={24} className="animate-spin text-gold" />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -362,13 +458,13 @@ export default function AccountPage() {
 
           {/* Plan badge */}
           <div className="mt-5 inline-flex items-center rounded-full bg-navy px-4 py-1.5 text-xs font-medium text-gold">
-            {MOCK_USER.plan} Plan
+            {subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)} Plan
           </div>
 
           {/* Price */}
           <div className="mt-4">
             <span className="font-display text-3xl font-bold text-navy">
-              £{MOCK_USER.pricePerMonth}
+              £{subscription.pricePerMonth}
             </span>
             <span className="text-sm text-muted">/month</span>
           </div>
@@ -377,11 +473,11 @@ export default function AccountPage() {
           <div className="mt-4 space-y-2 text-sm">
             <p className="text-muted">
               <span className="text-navy font-medium">Renewal:</span>{" "}
-              {MOCK_USER.renewalDate}
+              {subscription.renewalDate}
             </p>
             <p className="text-muted">
               <span className="text-navy font-medium">Member since:</span>{" "}
-              {MOCK_USER.memberSince}
+              {subscription.memberSince}
             </p>
           </div>
 
@@ -407,7 +503,7 @@ export default function AccountPage() {
             </button>
           ) : (
             <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              Cancellation requested. Access continues until {MOCK_USER.renewalDate}.
+              Cancellation requested. Access continues until {subscription.renewalDate}.
             </div>
           )}
         </motion.div>
@@ -424,6 +520,7 @@ export default function AccountPage() {
           <CancelModal
             onClose={() => setShowCancel(false)}
             onConfirm={handleCancelConfirm}
+            renewalDate={subscription.renewalDate}
           />
         )}
       </AnimatePresence>
