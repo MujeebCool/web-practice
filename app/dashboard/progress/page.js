@@ -1,5 +1,5 @@
-import { BookOpen, Clock, Award, TrendingUp, Languages, Sprout } from "lucide-react";
 import { motion } from "framer-motion";
+import { BookOpen, Languages, Sprout } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import { createClient } from "@/lib/supabase/server";
 
@@ -87,10 +87,10 @@ export default async function ProgressPage() {
   const totalHours = Math.round(totalSeconds / 3600) || 0;
 
   const stats = [
-    { label: "Lessons Completed", value: totalCompleted, icon: BookOpen },
-    { label: "Hours Learned", value: `${totalHours}h`, icon: Clock },
-    { label: "Day Streak", value: 0, icon: TrendingUp },
-    { label: "Active Programmes", value: programmes.length, icon: Award },
+    { label: "Lessons Completed", value: totalCompleted, icon: "BookOpen" },
+    { label: "Hours Learned", value: `${totalHours}h`, icon: "Clock" },
+    { label: "Day Streak", value: 0, icon: "TrendingUp" },
+    { label: "Active Programmes", value: programmes.length, icon: "Award" },
   ];
 
   // ── Recent Activity ───────────────────────────────────────────────────────

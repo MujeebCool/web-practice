@@ -1,14 +1,24 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { BookOpen, Clock, TrendingUp, Award } from "lucide-react";
+
+/**
+ * Icon name → component map.
+ * Accepts a string (from server components) or a component directly.
+ */
+const ICON_MAP = { BookOpen, Clock, TrendingUp, Award };
 
 /**
  * StatCard — Dashboard summary statistic card
  *
- * Displays a label, value, and icon in a clean card layout.
- * Subtle gold accent on hover.
+ * `icon` can be a string key (e.g. "BookOpen") or a Lucide component.
+ * Accepting a string lets Server Components pass it without violating
+ * the "no functions across server/client boundary" rule.
  */
-export default function StatCard({ label, value, icon: Icon, index = 0 }) {
+export default function StatCard({ label, value, icon, index = 0 }) {
+  const Icon = typeof icon === "string" ? ICON_MAP[icon] : icon;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}

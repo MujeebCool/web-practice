@@ -1,4 +1,3 @@
-import { BookOpen, Clock, Award, TrendingUp } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import ProgressCard from "@/components/dashboard/ProgressCard";
 import LessonCard from "@/components/dashboard/LessonCard";
@@ -81,10 +80,10 @@ export default async function DashboardPage() {
   const totalHours = Math.round(totalWatchedSeconds / 3600) || 0;
 
   const stats = [
-    { label: "Lessons Completed", value: totalCompleted, icon: BookOpen },
-    { label: "Hours Learned", value: `${totalHours}h`, icon: Clock },
-    { label: "Day Streak", value: 0, icon: TrendingUp },
-    { label: "Active Programmes", value: progressRows.length, icon: Award },
+    { label: "Lessons Completed", value: totalCompleted, icon: "BookOpen" },
+    { label: "Hours Learned", value: `${totalHours}h`, icon: "Clock" },
+    { label: "Day Streak", value: 0, icon: "TrendingUp" },
+    { label: "Active Programmes", value: progressRows.length, icon: "Award" },
   ];
 
   // ── 8. Recently watched lessons ─────────────────────────────────────────────

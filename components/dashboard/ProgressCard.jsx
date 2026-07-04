@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { BookOpen, Languages, Sprout } from "lucide-react";
+import { BookOpen, Languages, Sprout, Star } from "lucide-react";
 
-const iconMap = { BookOpen, Languages, Sprout };
+const ICON_MAP = { BookOpen, Languages, Sprout, Star };
 
 /**
  * ProgressCard — Programme progress card
@@ -29,7 +29,9 @@ export default function ProgressCard({
   const percent = Math.round(
     (progress.completedLessons / progress.totalLessons) * 100
   );
-  const Icon = iconMap[progress.icon] || BookOpen;
+  const Icon = typeof progress.icon === "string"
+    ? (ICON_MAP[progress.icon] || BookOpen)
+    : (progress.icon || BookOpen);
 
   return (
     <motion.div
