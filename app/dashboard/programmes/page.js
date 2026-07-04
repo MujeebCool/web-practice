@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { Star } from "lucide-react";
 import ProgressCard from "@/components/dashboard/ProgressCard";
 import { createClient } from "@/lib/supabase/server";
+
 
 /**
  * My Programmes Page — Server Component
