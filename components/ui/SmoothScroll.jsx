@@ -16,34 +16,38 @@ export default function SmoothScroll({ children }) {
   const lenisRef = useRef(null);
 
   useEffect(() => {
-    // Register GSAP ScrollTrigger plugin
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+
+    if (prefersReducedMotion || coarsePointer) {
+      return undefined;
+    }
+
     gsap.registerPlugin(ScrollTrigger);
 
-    // Initialise Lenis with premium-feel settings
     const lenis = new Lenis({
-      duration: 1.2,           // Scroll duration — slightly slower for premium feel
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // Expo easing
+      duration: 0.8,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
       orientation: "vertical",
       gestureOrientation: "vertical",
       smoothWheel: true,
-      touchMultiplier: 2,
+      smoothTouch: false,
+      wheelMultiplier: 0.9,
     });
 
     lenisRef.current = lenis;
-
-    // Sync Lenis scroll position with GSAP ScrollTrigger
     lenis.on("scroll", ScrollTrigger.update);
 
-    // Use GSAP's ticker for the Lenis RAF loop — keeps them perfectly in sync
-    gsap.ticker.add((time) => {
+    const raf = (time) => {
       lenis.raf(time * 1000);
-    });
+    };
 
-    // Disable GSAP's default lag smoothing to avoid fighting Lenis
-    gsap.ticker.lagSmoothing(0);
+    gsap.ticker.add(raf);
+    gsap.ticker.lagSmoothing(500, 33);
 
     return () => {
-      gsap.ticker.remove(lenis.raf);
+      gsap.ticker.remove(raf);
+      lenis.off("scroll", ScrollTrigger.update);
       lenis.destroy();
       lenisRef.current = null;
     };

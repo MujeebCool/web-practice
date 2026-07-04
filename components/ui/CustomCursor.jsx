@@ -12,6 +12,7 @@ import { motion, useMotionValue, useSpring } from "framer-motion";
  */
 export default function CustomCursor() {
   const cursorRef = useRef(null);
+  const visibleRef = useRef(false);
   const [isHovering, setIsHovering] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -22,44 +23,38 @@ export default function CustomCursor() {
   const springY = useSpring(cursorY, { damping: 25, stiffness: 350, mass: 0.5 });
 
   useEffect(() => {
-    // Don't render on touch devices
-    if (window.matchMedia("(pointer: coarse)").matches) return;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+
+    if (prefersReducedMotion || coarsePointer) return undefined;
 
     const onMove = (e) => {
       cursorX.set(e.clientX);
       cursorY.set(e.clientY);
-      if (!isVisible) setIsVisible(true);
+      if (!visibleRef.current) {
+        visibleRef.current = true;
+        setIsVisible(true);
+      }
     };
 
-    const onEnterInteractive = () => setIsHovering(true);
-    const onLeaveInteractive = () => setIsHovering(false);
-
-    window.addEventListener("mousemove", onMove);
-
-    // Watch for hover on interactive elements
     const interactiveSelector = "a, button, [role='button'], input, textarea, select, [data-cursor-hover]";
-    const observer = new MutationObserver(() => {
-      document.querySelectorAll(interactiveSelector).forEach((el) => {
-        el.removeEventListener("mouseenter", onEnterInteractive);
-        el.removeEventListener("mouseleave", onLeaveInteractive);
-        el.addEventListener("mouseenter", onEnterInteractive);
-        el.addEventListener("mouseleave", onLeaveInteractive);
-      });
-    });
+    const onPointerOver = (e) => {
+      if (e.target.closest(interactiveSelector)) setIsHovering(true);
+    };
+    const onPointerOut = (e) => {
+      if (e.target.closest(interactiveSelector)) setIsHovering(false);
+    };
 
-    // Initial setup + observe for dynamic elements
-    document.querySelectorAll(interactiveSelector).forEach((el) => {
-      el.addEventListener("mouseenter", onEnterInteractive);
-      el.addEventListener("mouseleave", onLeaveInteractive);
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("pointermove", onMove, { passive: true });
+    document.addEventListener("pointerover", onPointerOver, { passive: true });
+    document.addEventListener("pointerout", onPointerOut, { passive: true });
 
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      observer.disconnect();
+      window.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerover", onPointerOver);
+      document.removeEventListener("pointerout", onPointerOut);
     };
-  }, [cursorX, cursorY, isVisible]);
+  }, [cursorX, cursorY]);
 
   // Don't render on server or if not yet visible
   if (!isVisible) return null;

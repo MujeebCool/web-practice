@@ -1,14 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, X, Loader2, AlertTriangle } from "lucide-react";
+import { Check, Loader2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { updatePasswordAction, updateProfileAction } from "@/app/actions/account";
 
-/**
- * Toast — Simple auto-dismissing notification
- */
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDate(value) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+const PLAN_PRICE = { monthly: 15, annual: 12, "Annual Plan": 12 };
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
 function Toast({ message, onDismiss }) {
   useEffect(() => {
     const timer = setTimeout(onDismiss, 3000);
@@ -30,16 +42,15 @@ function Toast({ message, onDismiss }) {
   );
 }
 
-/**
- * CancelModal — Subscription cancellation confirmation
- */
+// ─── Cancel Modal ─────────────────────────────────────────────────────────────
+
 function CancelModal({ onClose, onConfirm, renewalDate }) {
   const [confirming, setConfirming] = useState(false);
 
   const handleConfirm = async () => {
     setConfirming(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    onConfirm();
+    await onConfirm();
+    setConfirming(false);
   };
 
   return (
@@ -93,185 +104,184 @@ function CancelModal({ onClose, onConfirm, renewalDate }) {
   );
 }
 
+// ─── Field component ──────────────────────────────────────────────────────────
+
+function Field({ id, label, error, children }) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-navy">
+        {label}
+      </label>
+      {children}
+      {error && <p className="mt-1.5 text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+const inputCls = (error) =>
+  `mt-1.5 w-full rounded-xl border bg-white px-4 py-3 text-sm text-navy outline-none transition-all duration-200 focus:ring-2 ${
+    error
+      ? "border-red-300 focus:ring-red-200"
+      : "border-gray-200 focus:border-gold focus:ring-gold/20"
+  }`;
+
+// ─── Account Page ─────────────────────────────────────────────────────────────
+
 /**
  * Account Settings Page
  *
- * Two-column layout:
- * - Left: Profile settings (personal info + password)
- * - Right: Subscription card with cancel flow
- *
- * Loads user data from Supabase profiles table.
+ * Reads from and writes to the `profiles` table in Supabase.
+ * "Cancel Subscription" sets profiles.cancel_at_period_end = true.
  */
 export default function AccountPage() {
   const supabase = createClient();
 
-  // Profile form state
+  // ── State ──────────────────────────────────────────────────────────────────
   const [profile, setProfile] = useState({ name: "", email: "" });
   const [profileErrors, setProfileErrors] = useState({});
-  const [profileLoading, setProfileLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
 
-  // Subscription data
   const [subscription, setSubscription] = useState({
-    plan: "free",
-    memberSince: "",
-    renewalDate: "",
-    pricePerMonth: 0,
+    plan: "Annual Plan",
+    memberSince: "—",
+    renewalDate: "—",
+    pricePerMonth: 12,
+    cancelAtPeriodEnd: false,
   });
 
-  // Password form state
   const [password, setPassword] = useState({
-    current: "",
+    currentPassword: "",
     newPassword: "",
-    confirm: "",
+    confirmPassword: "",
   });
   const [passwordErrors, setPasswordErrors] = useState({});
-  const [passwordLoading, setPasswordLoading] = useState(false);
 
-  // Toast
   const [toast, setToast] = useState("");
-
-  // Cancel modal
   const [showCancel, setShowCancel] = useState(false);
-  const [cancelled, setCancelled] = useState(false);
 
-  // Fetch user profile on mount
+  const [profilePending, startProfileTransition] = useTransition();
+  const [passwordPending, startPasswordTransition] = useTransition();
+
+  // ── Load profile ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const fetchProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+    let mounted = true;
 
-      if (user) {
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-        if (profileData) {
-          setProfile({
-            name: profileData.full_name || "",
-            email: profileData.email || user.email || "",
-          });
-          setSubscription({
-            plan: profileData.plan || "free",
-            memberSince: new Date(profileData.created_at).toLocaleDateString("en-GB", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            }),
-            renewalDate: profileData.plan !== "free"
-              ? new Date(
-                  new Date(profileData.created_at).setFullYear(
-                    new Date(profileData.created_at).getFullYear() + 1
-                  )
-                ).toLocaleDateString("en-GB", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })
-              : "—",
-            pricePerMonth: profileData.plan === "annual" ? 12 : profileData.plan === "monthly" ? 15 : 0,
-          });
-        } else {
-          // Fallback to auth metadata if profile doesn't exist yet
-          setProfile({
-            name: user.user_metadata?.full_name || user.email?.split("@")[0] || "",
-            email: user.email || "",
-          });
-        }
+      if (!mounted || !user) return;
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!mounted) return;
+
+      if (profileData) {
+        setProfile({
+          name: profileData.full_name || "",
+          email: profileData.email || user.email || "",
+        });
+        setSubscription({
+          plan: profileData.plan || "Annual Plan",
+          memberSince: formatDate(profileData.member_since || profileData.created_at),
+          renewalDate: formatDate(profileData.renews_at),
+          pricePerMonth: PLAN_PRICE[profileData.plan] ?? 12,
+          cancelAtPeriodEnd: !!profileData.cancel_at_period_end,
+        });
+      } else {
+        setProfile({
+          name: user.user_metadata?.full_name || "",
+          email: user.email || "",
+        });
       }
+
       setPageLoading(false);
-    };
+    })();
 
-    fetchProfile();
-  }, [supabase]);
+    return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Profile validation
-  const validateProfile = () => {
+  // ── Profile save ───────────────────────────────────────────────────────────
+  const handleProfileSubmit = (e) => {
+    e.preventDefault();
+    setProfileErrors({});
+
     const errs = {};
     if (!profile.name.trim()) errs.name = "Name is required";
     if (!profile.email.trim()) errs.email = "Email is required";
     else if (!/\S+@\S+\.\S+/.test(profile.email)) errs.email = "Enter a valid email";
-    return errs;
-  };
+    if (Object.keys(errs).length) { setProfileErrors(errs); return; }
 
-  // Password validation
-  const validatePassword = () => {
-    const errs = {};
-    if (!password.current) errs.current = "Current password is required";
-    if (!password.newPassword) errs.newPassword = "New password is required";
-    else if (password.newPassword.length < 8) errs.newPassword = "Minimum 8 characters";
-    if (!password.confirm) errs.confirm = "Please confirm your password";
-    else if (password.newPassword !== password.confirm) errs.confirm = "Passwords do not match";
-    return errs;
-  };
+    const fd = new FormData();
+    fd.set("name", profile.name);
+    fd.set("email", profile.email);
 
-  const handleProfileSubmit = async (e) => {
-    e.preventDefault();
-    const errs = validateProfile();
-    setProfileErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-
-    setProfileLoading(true);
-
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (user) {
-      const formData = new FormData();
-      formData.set("name", profile.name);
-      formData.set("email", profile.email);
-
-      const result = await updateProfileAction(formData);
-
+    startProfileTransition(async () => {
+      const result = await updateProfileAction(fd);
       if (result?.error) {
         setProfileErrors({ name: result.error });
       } else {
         setToast(result?.success || "Changes saved");
       }
-    }
-
-    setProfileLoading(false);
+    });
   };
 
-  const handlePasswordSubmit = async (e) => {
+  // ── Password update ────────────────────────────────────────────────────────
+  const handlePasswordSubmit = (e) => {
     e.preventDefault();
-    const errs = validatePassword();
-    setPasswordErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    setPasswordErrors({});
 
-    setPasswordLoading(true);
+    const errs = {};
+    if (!password.currentPassword) errs.currentPassword = "Current password is required";
+    if (!password.newPassword) errs.newPassword = "New password is required";
+    else if (password.newPassword.length < 8) errs.newPassword = "Minimum 8 characters";
+    if (password.newPassword !== password.confirmPassword) errs.confirmPassword = "Passwords do not match";
+    if (Object.keys(errs).length) { setPasswordErrors(errs); return; }
 
-    const formData = new FormData();
-    formData.set("currentPassword", password.current);
-    formData.set("newPassword", password.newPassword);
-    formData.set("confirmPassword", password.confirm);
+    const fd = new FormData();
+    fd.set("currentPassword", password.currentPassword);
+    fd.set("newPassword", password.newPassword);
+    fd.set("confirmPassword", password.confirmPassword);
 
-    const result = await updatePasswordAction(formData);
+    startPasswordTransition(async () => {
+      const result = await updatePasswordAction(fd);
+      if (result?.error) {
+        setPasswordErrors({ currentPassword: result.error });
+      } else {
+        setPassword({ currentPassword: "", newPassword: "", confirmPassword: "" });
+        setToast("Password updated");
+      }
+    });
+  };
 
-    if (result?.error) {
-      setPasswordErrors({ current: result.error });
-    } else {
-      setPassword({ current: "", newPassword: "", confirm: "" });
-      setToast(result?.success || "Password updated");
+  // ── Cancel subscription ────────────────────────────────────────────────────
+  const handleCancelConfirm = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ cancel_at_period_end: true })
+      .eq("id", user.id);
+
+    if (!error) {
+      setSubscription((prev) => ({ ...prev, cancelAtPeriodEnd: true }));
+      setToast("Cancellation requested. You will retain access until your renewal date.");
     }
-
-    setPasswordLoading(false);
-  };
-
-  const handleCancelConfirm = () => {
     setShowCancel(false);
-    setCancelled(true);
-    setToast("Cancellation requested. You will retain access until your renewal date.");
-  };
+  }, [supabase]);
 
-  const inputClass = (error) =>
-    `mt-1.5 w-full rounded-xl border bg-white px-4 py-3 text-sm text-navy outline-none transition-all duration-200 focus:ring-2 ${
-      error
-        ? "border-red-300 focus:ring-red-200"
-        : "border-gray-200 focus:border-gold focus:ring-gold/20"
-    }`;
-
-  const subscriptionFeatures = [
+  // ── Features list ──────────────────────────────────────────────────────────
+  const features = [
     "Full access to all programmes",
     "1,000+ video lessons",
     "Monthly live Q&A sessions",
@@ -289,7 +299,7 @@ export default function AccountPage() {
   return (
     <>
       <div className="grid gap-8 lg:grid-cols-[1fr,400px]">
-        {/* ── Left Column: Profile Settings ── */}
+        {/* ── Left column ── */}
         <div className="space-y-8">
           {/* Personal Information */}
           <motion.div
@@ -303,10 +313,7 @@ export default function AccountPage() {
             </h3>
 
             <form className="mt-6 space-y-5" onSubmit={handleProfileSubmit} noValidate>
-              <div>
-                <label htmlFor="acc-name" className="block text-sm font-medium text-navy">
-                  Full Name
-                </label>
+              <Field id="acc-name" label="Full Name" error={profileErrors.name}>
                 <input
                   id="acc-name"
                   type="text"
@@ -315,17 +322,11 @@ export default function AccountPage() {
                     setProfile({ ...profile, name: e.target.value });
                     if (profileErrors.name) setProfileErrors({ ...profileErrors, name: "" });
                   }}
-                  className={inputClass(profileErrors.name)}
+                  className={inputCls(profileErrors.name)}
                 />
-                {profileErrors.name && (
-                  <p className="mt-1.5 text-xs text-red-500">{profileErrors.name}</p>
-                )}
-              </div>
+              </Field>
 
-              <div>
-                <label htmlFor="acc-email" className="block text-sm font-medium text-navy">
-                  Email
-                </label>
+              <Field id="acc-email" label="Email" error={profileErrors.email}>
                 <input
                   id="acc-email"
                   type="email"
@@ -334,19 +335,16 @@ export default function AccountPage() {
                     setProfile({ ...profile, email: e.target.value });
                     if (profileErrors.email) setProfileErrors({ ...profileErrors, email: "" });
                   }}
-                  className={inputClass(profileErrors.email)}
+                  className={inputCls(profileErrors.email)}
                 />
-                {profileErrors.email && (
-                  <p className="mt-1.5 text-xs text-red-500">{profileErrors.email}</p>
-                )}
-              </div>
+              </Field>
 
               <button
                 type="submit"
-                disabled={profileLoading}
+                disabled={profilePending}
                 className="rounded-full bg-gold px-6 py-3 text-sm font-medium text-navy transition-all duration-300 hover:bg-gold-light hover:shadow-lg hover:shadow-gold/20 disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                {profileLoading ? (
+                {profilePending ? (
                   <span className="flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin" />
                     Saving…
@@ -358,7 +356,7 @@ export default function AccountPage() {
             </form>
           </motion.div>
 
-          {/* Password Section */}
+          {/* Change Password */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -370,29 +368,20 @@ export default function AccountPage() {
             </h3>
 
             <form className="mt-6 space-y-5" onSubmit={handlePasswordSubmit} noValidate>
-              <div>
-                <label htmlFor="acc-current-pw" className="block text-sm font-medium text-navy">
-                  Current Password
-                </label>
+              <Field id="acc-current-pw" label="Current Password" error={passwordErrors.currentPassword}>
                 <input
                   id="acc-current-pw"
                   type="password"
-                  value={password.current}
+                  value={password.currentPassword}
                   onChange={(e) => {
-                    setPassword({ ...password, current: e.target.value });
-                    if (passwordErrors.current) setPasswordErrors({ ...passwordErrors, current: "" });
+                    setPassword({ ...password, currentPassword: e.target.value });
+                    if (passwordErrors.currentPassword) setPasswordErrors({ ...passwordErrors, currentPassword: "" });
                   }}
-                  className={inputClass(passwordErrors.current)}
+                  className={inputCls(passwordErrors.currentPassword)}
                 />
-                {passwordErrors.current && (
-                  <p className="mt-1.5 text-xs text-red-500">{passwordErrors.current}</p>
-                )}
-              </div>
+              </Field>
 
-              <div>
-                <label htmlFor="acc-new-pw" className="block text-sm font-medium text-navy">
-                  New Password
-                </label>
+              <Field id="acc-new-pw" label="New Password" error={passwordErrors.newPassword}>
                 <input
                   id="acc-new-pw"
                   type="password"
@@ -401,39 +390,30 @@ export default function AccountPage() {
                     setPassword({ ...password, newPassword: e.target.value });
                     if (passwordErrors.newPassword) setPasswordErrors({ ...passwordErrors, newPassword: "" });
                   }}
-                  className={inputClass(passwordErrors.newPassword)}
+                  className={inputCls(passwordErrors.newPassword)}
                   placeholder="Minimum 8 characters"
                 />
-                {passwordErrors.newPassword && (
-                  <p className="mt-1.5 text-xs text-red-500">{passwordErrors.newPassword}</p>
-                )}
-              </div>
+              </Field>
 
-              <div>
-                <label htmlFor="acc-confirm-pw" className="block text-sm font-medium text-navy">
-                  Confirm New Password
-                </label>
+              <Field id="acc-confirm-pw" label="Confirm New Password" error={passwordErrors.confirmPassword}>
                 <input
                   id="acc-confirm-pw"
                   type="password"
-                  value={password.confirm}
+                  value={password.confirmPassword}
                   onChange={(e) => {
-                    setPassword({ ...password, confirm: e.target.value });
-                    if (passwordErrors.confirm) setPasswordErrors({ ...passwordErrors, confirm: "" });
+                    setPassword({ ...password, confirmPassword: e.target.value });
+                    if (passwordErrors.confirmPassword) setPasswordErrors({ ...passwordErrors, confirmPassword: "" });
                   }}
-                  className={inputClass(passwordErrors.confirm)}
+                  className={inputCls(passwordErrors.confirmPassword)}
                 />
-                {passwordErrors.confirm && (
-                  <p className="mt-1.5 text-xs text-red-500">{passwordErrors.confirm}</p>
-                )}
-              </div>
+              </Field>
 
               <button
                 type="submit"
-                disabled={passwordLoading}
+                disabled={passwordPending}
                 className="rounded-full bg-gold px-6 py-3 text-sm font-medium text-navy transition-all duration-300 hover:bg-gold-light hover:shadow-lg hover:shadow-gold/20 disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                {passwordLoading ? (
+                {passwordPending ? (
                   <span className="flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin" />
                     Updating…
@@ -446,7 +426,7 @@ export default function AccountPage() {
           </motion.div>
         </div>
 
-        {/* ── Right Column: Subscription ── */}
+        {/* ── Right column: Subscription ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -457,12 +437,10 @@ export default function AccountPage() {
             Your Subscription
           </h3>
 
-          {/* Plan badge */}
           <div className="mt-5 inline-flex items-center rounded-full bg-navy px-4 py-1.5 text-xs font-medium text-gold">
-            {subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)} Plan
+            {subscription.plan}
           </div>
 
-          {/* Price */}
           <div className="mt-4">
             <span className="font-display text-3xl font-bold text-navy">
               £{subscription.pricePerMonth}
@@ -470,52 +448,49 @@ export default function AccountPage() {
             <span className="text-sm text-muted">/month</span>
           </div>
 
-          {/* Dates */}
           <div className="mt-4 space-y-2 text-sm">
             <p className="text-muted">
-              <span className="text-navy font-medium">Renewal:</span>{" "}
+              <span className="font-medium text-navy">Renewal:</span>{" "}
               {subscription.renewalDate}
             </p>
             <p className="text-muted">
-              <span className="text-navy font-medium">Member since:</span>{" "}
+              <span className="font-medium text-navy">Member since:</span>{" "}
               {subscription.memberSince}
             </p>
           </div>
 
-          {/* Features */}
           <ul className="mt-6 space-y-3">
-            {subscriptionFeatures.map((feature) => (
-              <li key={feature} className="flex items-center gap-3 text-sm text-ink/70">
+            {features.map((f) => (
+              <li key={f} className="flex items-center gap-3 text-sm text-ink/70">
                 <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gold/10">
                   <Check size={12} className="text-gold" strokeWidth={2.5} />
                 </div>
-                {feature}
+                {f}
               </li>
             ))}
           </ul>
 
-          {/* Cancel button */}
-          {!cancelled ? (
+          {subscription.cancelAtPeriodEnd ? (
+            <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+              Cancellation requested. Access continues until {subscription.renewalDate}.
+            </div>
+          ) : (
             <button
               onClick={() => setShowCancel(true)}
               className="mt-8 w-full rounded-full border border-red-200 px-4 py-3 text-sm font-medium text-red-500 transition-all hover:bg-red-50"
             >
               Cancel Subscription
             </button>
-          ) : (
-            <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              Cancellation requested. Access continues until {subscription.renewalDate}.
-            </div>
           )}
         </motion.div>
       </div>
 
-      {/* Toast notification */}
+      {/* Toast */}
       <AnimatePresence>
         {toast && <Toast message={toast} onDismiss={() => setToast("")} />}
       </AnimatePresence>
 
-      {/* Cancel confirmation modal */}
+      {/* Cancel modal */}
       <AnimatePresence>
         {showCancel && (
           <CancelModal

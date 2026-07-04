@@ -1,71 +1,120 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Clock, Award, TrendingUp } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import ProgressCard from "@/components/dashboard/ProgressCard";
 import LessonCard from "@/components/dashboard/LessonCard";
-import { MOCK_PROGRESS, MOCK_RECENT_LESSONS } from "@/lib/mock-data";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/server";
 
 /**
- * Dashboard Overview — Main dashboard page
+ * Dashboard Overview — Server Component
  *
- * Sections:
- * 1. Welcome greeting
- * 2. 4 StatCards (lessons, hours, streak, programmes)
- * 3. Active Programmes (ProgressCards)
- * 4. Recently Watched (LessonCards)
+ * Fetches real data from Supabase:
+ * 1. User's first name from profiles table
+ * 2. Per-programme completion counts from user_progress
+ * 3. Recently watched lessons from user_progress joined with lessons
  */
+export default async function DashboardPage() {
+  const supabase = createClient();
 
-// Compute dashboard stats from mock data
-const totalCompleted = MOCK_PROGRESS.reduce((sum, p) => sum + p.completedLessons, 0);
-const totalHours = Math.round(totalCompleted * 0.35); // ~21 min avg per lesson
+  // ── 1. Current user ────────────────────────────────────────────────────────
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-const stats = [
-  { label: "Lessons Completed", value: totalCompleted, icon: BookOpen },
-  { label: "Hours Learned", value: `${totalHours}h`, icon: Clock },
-  { label: "Day Streak", value: 14, icon: TrendingUp },
-  { label: "Active Programmes", value: MOCK_PROGRESS.length, icon: Award },
-];
-
-export default function DashboardPage() {
-  const supabase = useMemo(() => createClient(), []);
-  const [firstName, setFirstName] = useState("Student");
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadUserName = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!mounted || !user) return;
-
-      const { data: profile } = await supabase
+  // ── 2. Profile (full name) ─────────────────────────────────────────────────
+  const { data: profile } = user
+    ? await supabase
         .from("profiles")
         .select("full_name")
         .eq("id", user.id)
-        .maybeSingle();
+        .maybeSingle()
+    : { data: null };
 
-      const fullName =
-        profile?.full_name ||
-        user.user_metadata?.full_name ||
-        user.email?.split("@")[0] ||
-        "Student";
+  const fullName =
+    profile?.full_name ||
+    user?.user_metadata?.full_name ||
+    user?.email?.split("@")[0] ||
+    "Student";
+  const firstName = fullName.split(" ").filter(Boolean)[0] || "Student";
 
-      if (mounted) {
-        setFirstName(fullName.split(" ").filter(Boolean)[0] || "Student");
-      }
-    };
+  // ── 3. Programmes catalogue ─────────────────────────────────────────────────
+  const { data: programmes = [] } = await supabase
+    .from("programmes")
+    .select("id, slug, title, icon, colour, total_lessons")
+    .in("slug", ["ilm", "arabic", "grow"]) // active programmes shown on dashboard
+    .order("created_at", { ascending: true });
 
-    loadUserName();
+  // ── 4. User progress per lesson ─────────────────────────────────────────────
+  const { data: userProgress = [] } = user
+    ? await supabase
+        .from("user_progress")
+        .select("lesson_id, completed, last_watched_at, lessons(programme_id, duration_seconds)")
+        .eq("user_id", user.id)
+    : { data: [] };
 
-    return () => {
-      mounted = false;
-    };
-  }, [supabase]);
+  // ── 5. Aggregate completions per programme ──────────────────────────────────
+  const completionsByProgramme = {};
+  for (const row of userProgress) {
+    const pid = row.lessons?.programme_id;
+    if (!pid) continue;
+    if (!completionsByProgramme[pid]) completionsByProgramme[pid] = 0;
+    if (row.completed) completionsByProgramme[pid]++;
+  }
+
+  // ── 6. Build ProgressCard data ──────────────────────────────────────────────
+  const progressRows = programmes.map((p) => ({
+    id: p.id,
+    programme: p.title,
+    slug: p.slug,
+    icon: p.icon || "BookOpen",
+    totalLessons: p.total_lessons,
+    completedLessons: completionsByProgramme[p.id] || 0,
+    lastActivity: "—",
+    colour: p.colour || "#C9A84C",
+  }));
+
+  // ── 7. Total stats ──────────────────────────────────────────────────────────
+  const totalCompleted = userProgress.filter((r) => r.completed).length;
+  const totalWatchedSeconds = userProgress.reduce(
+    (sum, r) => sum + (r.completed ? (r.lessons?.duration_seconds || 0) : 0),
+    0
+  );
+  const totalHours = Math.round(totalWatchedSeconds / 3600) || 0;
+
+  const stats = [
+    { label: "Lessons Completed", value: totalCompleted, icon: BookOpen },
+    { label: "Hours Learned", value: `${totalHours}h`, icon: Clock },
+    { label: "Day Streak", value: 0, icon: TrendingUp },
+    { label: "Active Programmes", value: progressRows.length, icon: Award },
+  ];
+
+  // ── 8. Recently watched lessons ─────────────────────────────────────────────
+  const { data: recentRaw = [] } = user
+    ? await supabase
+        .from("user_progress")
+        .select(
+          "last_watched_at, lessons(id, title, duration_seconds, programme_id, programmes(title, slug))"
+        )
+        .eq("user_id", user.id)
+        .order("last_watched_at", { ascending: false })
+        .limit(3)
+    : { data: [] };
+
+  const recentLessons = recentRaw
+    .filter((r) => r.lessons)
+    .map((r, i) => ({
+      id: r.lessons.id || i,
+      title: r.lessons.title,
+      programme: r.lessons.programmes?.title || "—",
+      slug: r.lessons.programmes?.slug || "",
+      duration: r.lessons.duration_seconds
+        ? `${Math.round(r.lessons.duration_seconds / 60)} min`
+        : "—",
+      watchedAt: new Date(r.last_watched_at).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+    }));
 
   return (
     <div className="space-y-10">
@@ -92,9 +141,15 @@ export default function DashboardPage() {
           Active Programmes
         </h3>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {MOCK_PROGRESS.map((p, i) => (
-            <ProgressCard key={p.id} progress={p} index={i} />
-          ))}
+          {progressRows.length > 0 ? (
+            progressRows.map((p, i) => (
+              <ProgressCard key={p.id} progress={p} index={i} />
+            ))
+          ) : (
+            <p className="col-span-3 text-sm text-muted">
+              No programmes found. Ask your administrator to seed the programmes table.
+            </p>
+          )}
         </div>
       </div>
 
@@ -103,11 +158,17 @@ export default function DashboardPage() {
         <h3 className="font-display text-lg font-semibold text-navy">
           Recently Watched
         </h3>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {MOCK_RECENT_LESSONS.slice(0, 3).map((lesson, i) => (
-            <LessonCard key={lesson.id} lesson={lesson} index={i} />
-          ))}
-        </div>
+        {recentLessons.length > 0 ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recentLessons.map((lesson, i) => (
+              <LessonCard key={lesson.id} lesson={lesson} index={i} />
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-muted">
+            No lessons watched yet. Start a programme to track your progress.
+          </p>
+        )}
       </div>
     </div>
   );
