@@ -6,71 +6,63 @@ import { BookOpen, Languages, Sprout } from "lucide-react";
 const ICON_MAP = { BookOpen, Languages, Sprout };
 
 /**
- * CircularProgress — CSS-only circular ring indicator
- */
-function CircularProgress({ percent, colour = "#C9A84C", size = 120 }) {
-  return (
-    <div
-      className="relative flex items-center justify-center rounded-full"
-      style={{
-        width: size,
-        height: size,
-        background: `conic-gradient(${colour} ${percent * 3.6}deg, #f3f4f6 ${percent * 3.6}deg)`,
-      }}
-    >
-      <div
-        className="flex items-center justify-center rounded-full bg-white"
-        style={{ width: size - 16, height: size - 16 }}
-      >
-        <span className="font-display text-2xl font-bold text-navy">
-          {percent}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
  * ProgrammeBreakdownGrid — Client Component
  *
- * Renders animated circular-progress cards per programme.
- * Receives plain serializable data from the parent Server Component.
+ * Renders animated horizontal list rows for programme progress.
  *
  * @param {{ programmes: Array<{id,title,icon,colour,total_lessons,completedLessons,lastActivity}> }} props
  */
 export function ProgrammeBreakdownGrid({ programmes }) {
   return (
-    <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="mt-6 flex flex-col gap-4">
       {programmes.map((p, i) => {
         const percent =
           p.total_lessons > 0
             ? Math.round((p.completedLessons / p.total_lessons) * 100)
             : 0;
         const Icon = ICON_MAP[p.icon] || BookOpen;
+        const isCompleted = percent === 100;
 
         return (
           <motion.div
             key={p.id}
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: i * 0.1 }}
-            className="flex flex-col items-center rounded-2xl border border-gray-100 bg-white p-8 text-center transition-all duration-300 hover:border-gold/20 hover:shadow-lg hover:shadow-gold/5"
+            transition={{ duration: 0.3, delay: i * 0.05 }}
+            className="group flex flex-col sm:flex-row sm:items-center justify-between rounded-xl border border-gray-200 bg-white p-5 transition-all duration-200 hover:border-gold/30 hover:shadow-sm"
           >
-            <div className="flex items-center gap-2 mb-6">
-              <Icon size={18} className="text-gold" strokeWidth={1.5} />
-              <span className="text-sm font-medium text-navy">
-                {p.title.replace(" with Ilm Academy", "")}
-              </span>
+            {/* Left side: Icon and Info */}
+            <div className="flex items-center gap-4 min-w-[280px]">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-gold">
+                <Icon size={24} strokeWidth={1.5} />
+              </div>
+              <div>
+                <h3 className="font-display text-lg font-semibold text-navy leading-tight">
+                  {p.title.replace(" with Ilm Academy", "")}
+                </h3>
+                <p className="mt-1 text-xs font-medium text-muted/80">
+                  Last activity: {p.lastActivity}
+                </p>
+              </div>
             </div>
 
-            <CircularProgress percent={percent} colour={p.colour || "#C9A84C"} />
-
-            <p className="mt-5 text-sm text-muted">
-              {p.completedLessons} / {p.total_lessons} lessons
-            </p>
-            <p className="mt-1 text-xs text-muted/60">
-              Last activity: {p.lastActivity}
-            </p>
+            {/* Right side: Linear Progress Bar */}
+            <div className="mt-4 sm:mt-0 flex-1 sm:ml-8 max-w-md w-full">
+              <div className="flex items-center justify-between text-xs font-medium mb-1.5">
+                <span className="text-muted/70">
+                  {p.completedLessons} / {p.total_lessons} lessons completed
+                </span>
+                <span className={isCompleted ? "text-green-600" : "text-navy"}>{percent}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${percent}%` }}
+                  transition={{ duration: 1, delay: 0.2 + i * 0.05, ease: "easeOut" }}
+                  className={`h-full rounded-full ${isCompleted ? 'bg-green-500' : 'bg-gold'}`}
+                />
+              </div>
+            </div>
           </motion.div>
         );
       })}

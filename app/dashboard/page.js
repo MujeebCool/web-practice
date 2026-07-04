@@ -139,13 +139,13 @@ export default async function DashboardPage() {
         <h3 className="font-display text-lg font-semibold text-navy">
           Active Programmes
         </h3>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 flex flex-col gap-3">
           {progressRows.length > 0 ? (
             progressRows.map((p, i) => (
               <ProgressCard key={p.id} progress={p} index={i} />
             ))
           ) : (
-            <p className="col-span-3 text-sm text-muted">
+            <p className="text-sm text-muted">
               No programmes found. Ask your administrator to seed the programmes table.
             </p>
           )}

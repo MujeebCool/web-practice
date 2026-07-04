@@ -20,7 +20,7 @@ export default async function ProgrammesPage() {
   // ── Catalogue ──────────────────────────────────────────────────────────────
   const { data: programmes = [] } = await supabase
     .from("programmes")
-    .select("id, slug, title, icon, colour, total_lessons")
+    .select("id, slug, title, icon, colour, total_lessons, description")
     .order("created_at", { ascending: true });
 
   // ── User progress ──────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export default async function ProgrammesPage() {
         </p>
       </div>
 
-      {/* Active Programmes */}
+      {/* Active Programmes (HackerRank horizontal style) */}
       <div className="space-y-4">
         {progressRows.map((p, i) => (
           <ProgressCard
@@ -88,41 +88,46 @@ export default async function ProgrammesPage() {
             progress={p}
             showPercent
             showContinue
-            large
             index={i}
           />
         ))}
       </div>
 
-      {/* Not Started */}
-      {notStarted.map((p, i) => (
-        <div key={p.id}>
-          <h3 className="font-display text-lg font-semibold text-navy mb-4">
-            Not Started Yet
-          </h3>
-          <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-8">
-            <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-muted">
-                <Star size={20} strokeWidth={1.5} />
+      {/* Not Started / Skills Catalogue Grid (HackerRank grid style) */}
+      <div>
+        <h3 className="font-display text-lg font-semibold text-navy mb-4">
+          Skills Available for Practice
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {notStarted.map((p, i) => (
+            <div 
+              key={p.id} 
+              className="group flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white p-8 text-center transition-all duration-300 hover:border-gold/50 hover:shadow-md cursor-pointer relative overflow-hidden"
+            >
+              {/* Subtle hover background effect */}
+              <div className="absolute inset-0 bg-gold/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+              
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-50 text-gold mb-4 group-hover:scale-110 transition-transform duration-300">
+                <Star size={28} strokeWidth={1.5} />
               </div>
-              <div className="flex-1">
-                <h3 className="font-display text-lg font-semibold text-navy/50">
-                  {p.title}
-                </h3>
-                <p className="mt-1 text-sm text-muted">
-                  {p.description || `A guided path — ${p.total_lessons} lessons`}
-                </p>
-                <Link
-                  href={`/programmes/${p.slug}`}
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gold hover:text-gold-light transition-colors"
-                >
-                  Start Programme →
-                </Link>
-              </div>
+              
+              <h4 className="font-display text-lg font-semibold text-navy mb-2">
+                {p.title}
+              </h4>
+              <p className="text-sm text-muted mb-6">
+                {p.description || `A guided path — ${p.total_lessons} lessons`}
+              </p>
+              
+              <Link
+                href={`/programmes/${p.slug}`}
+                className="mt-auto w-full rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-navy transition-all hover:bg-gold hover:text-white hover:border-gold"
+              >
+                Start Practice
+              </Link>
             </div>
-          </div>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   );
 }
