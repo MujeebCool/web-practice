@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Loader2, CheckCircle } from "lucide-react";
+import { resetPasswordAction } from "@/app/actions/auth";
 
 /**
  * ResetPasswordPage — Set a new password
@@ -14,7 +15,8 @@ export default function ResetPasswordPage() {
   const [form, setForm] = useState({ password: "", confirm: "" });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [generalError, setGeneralError] = useState("");
+  const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
 
   const validate = () => {
@@ -30,12 +32,21 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     const errs = validate();
     setErrors(errs);
+    setGeneralError("");
     if (Object.keys(errs).length > 0) return;
 
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    setDone(true);
+    const formData = new FormData(e.currentTarget);
+
+    startTransition(async () => {
+      const result = await resetPasswordAction(formData);
+
+      if (result?.error) {
+        setGeneralError(result.error);
+        return;
+      }
+
+      setDone(true);
+    });
   };
 
   const handleChange = (field) => (e) => {
@@ -90,6 +101,16 @@ export default function ResetPasswordPage() {
       </motion.div>
 
       <form className="mt-8 space-y-5" onSubmit={handleSubmit} noValidate>
+        {generalError && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            {generalError}
+          </motion.div>
+        )}
+
         {/* New Password */}
         <motion.div custom={1} variants={fadeUp} initial="hidden" animate="show">
           <label htmlFor="reset-password" className="block text-sm font-medium text-navy">
@@ -98,6 +119,7 @@ export default function ResetPasswordPage() {
           <div className="relative mt-1.5">
             <input
               id="reset-password"
+              name="password"
               type={showPassword ? "text" : "password"}
               value={form.password}
               onChange={handleChange("password")}
@@ -128,6 +150,7 @@ export default function ResetPasswordPage() {
           </label>
           <input
             id="reset-confirm"
+            name="confirm"
             type={showPassword ? "text" : "password"}
             value={form.confirm}
             onChange={handleChange("confirm")}
@@ -146,10 +169,10 @@ export default function ResetPasswordPage() {
         <motion.div custom={3} variants={fadeUp} initial="hidden" animate="show">
           <button
             type="submit"
-            disabled={loading}
+            disabled={isPending}
             className="relative w-full rounded-full bg-gold py-3.5 text-sm font-medium text-navy transition-all duration-300 hover:bg-gold-light hover:shadow-lg hover:shadow-gold/20 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {loading ? (
+            {isPending ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" />
                 Updating…

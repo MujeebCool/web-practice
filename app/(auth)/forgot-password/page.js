@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Loader2, ArrowLeft, CheckCircle } from "lucide-react";
+import { requestPasswordResetAction } from "@/app/actions/auth";
 
 /**
  * ForgotPasswordPage — Email-based password reset request
@@ -13,7 +14,7 @@ import { Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [sent, setSent] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -28,10 +29,18 @@ export default function ForgotPasswordPage() {
       return;
     }
 
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    setSent(true);
+    const formData = new FormData(e.currentTarget);
+
+    startTransition(async () => {
+      const result = await requestPasswordResetAction(formData);
+
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
+
+      setSent(true);
+    });
   };
 
   const fadeUp = {
@@ -97,6 +106,7 @@ export default function ForgotPasswordPage() {
           </label>
           <input
             id="forgot-email"
+            name="email"
             type="email"
             value={email}
             onChange={(e) => {
@@ -116,10 +126,10 @@ export default function ForgotPasswordPage() {
         <motion.div custom={2} variants={fadeUp} initial="hidden" animate="show">
           <button
             type="submit"
-            disabled={loading}
+            disabled={isPending}
             className="relative w-full rounded-full bg-gold py-3.5 text-sm font-medium text-navy transition-all duration-300 hover:bg-gold-light hover:shadow-lg hover:shadow-gold/20 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {loading ? (
+            {isPending ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" />
                 Sending…

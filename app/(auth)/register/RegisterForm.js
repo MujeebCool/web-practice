@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Loader2, ChevronDown } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { signUpAction, signInWithGoogleAction } from "@/app/actions/auth";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Select gender" },
@@ -15,91 +14,50 @@ const GENDER_OPTIONS = [
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
-/**
- * RegisterForm — Account creation with Supabase Auth
- *
- * Collects name, email, password, date of birth, and gender.
- * Supports email/password sign-up and Google OAuth.
- * On success, redirects to /pricing.
- */
 export default function RegisterForm() {
-  const router = useRouter();
-  const supabase = createClient();
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    dateOfBirth: "",
-    gender: "",
-  });
-  const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [generalError, setGeneralError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isPending, startTransition] = useTransition();
 
-  const validate = () => {
-    const errs = {};
-    if (!form.name.trim()) errs.name = "Full name is required";
-    if (!form.email.trim()) errs.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = "Enter a valid email";
-    if (!form.password) errs.password = "Password is required";
-    else if (form.password.length < 8) errs.password = "Minimum 8 characters";
-    if (!form.dateOfBirth) errs.dateOfBirth = "Date of birth is required";
-    if (!form.gender) errs.gender = "Please select a gender";
-    return errs;
-  };
-
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     setGeneralError("");
-    const errs = validate();
-    setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
-
-    setLoading(true);
-
-    const { error } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-      options: {
-        data: {
-          full_name: form.name,
-          date_of_birth: form.dateOfBirth,
-          gender: form.gender,
-        },
-      },
-    });
-
-    if (error) {
-      setLoading(false);
-      setGeneralError(error.message);
-    } else {
-      router.push("/pricing");
-      router.refresh();
+    setSuccess("");
+    
+    const formData = new FormData(e.currentTarget);
+    
+    // Client-side validation
+    const email = formData.get("email");
+    const password = formData.get("password");
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      setGeneralError("Please enter a valid email address.");
+      return;
     }
+    if (password.length < 8) {
+      setGeneralError("Password must be at least 8 characters.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await signUpAction(formData);
+      if (result?.error) {
+        setGeneralError(result.error);
+      } else if (result?.success) {
+        setSuccess(result.success);
+        e.target.reset();
+      }
+    });
   };
 
-  const handleGoogleSignUp = async () => {
-    setGoogleLoading(true);
+  const handleGoogleSignUp = () => {
     setGeneralError("");
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/pricing`,
-      },
+    startTransition(async () => {
+      const result = await signInWithGoogleAction();
+      if (result?.error) {
+        setGeneralError(result.error);
+      }
     });
-
-    if (error) {
-      setGoogleLoading(false);
-      setGeneralError(error.message);
-    }
-  };
-
-  const handleChange = (field) => (e) => {
-    setForm({ ...form, [field]: e.target.value });
-    if (errors[field]) setErrors({ ...errors, [field]: "" });
   };
 
   const fadeUp = {
@@ -111,12 +69,8 @@ export default function RegisterForm() {
     }),
   };
 
-  const inputClass = (error) =>
-    `mt-1.5 w-full rounded-xl border bg-white px-4 py-3 text-sm text-navy outline-none transition-all duration-200 focus:ring-2 ${
-      error
-        ? "border-red-300 focus:ring-red-200"
-        : "border-gray-200 focus:border-gold focus:ring-gold/20"
-    }`;
+  const inputClass = 
+    "mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-navy outline-none transition-all duration-200 focus:border-gold focus:ring-2 focus:ring-gold/20";
 
   return (
     <>
@@ -129,25 +83,38 @@ export default function RegisterForm() {
         </p>
       </motion.div>
 
-      {generalError && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-        >
-          {generalError}
-        </motion.div>
-      )}
+      <AnimatePresence mode="wait">
+        {generalError && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            {generalError}
+          </motion.div>
+        )}
+        {success && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mt-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+          >
+            {success}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Google Sign-Up ── */}
       <motion.div custom={1} variants={fadeUp} initial="hidden" animate="show" className="mt-8">
         <button
           type="button"
           onClick={handleGoogleSignUp}
-          disabled={googleLoading || loading}
+          disabled={isPending}
           className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white py-3.5 text-sm font-medium text-navy transition-all duration-300 hover:bg-gray-50 hover:shadow-md disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          {googleLoading ? (
+          {isPending ? (
             <Loader2 size={18} className="animate-spin" />
           ) : (
             <svg width="18" height="18" viewBox="0 0 24 24">
@@ -182,15 +149,12 @@ export default function RegisterForm() {
           </label>
           <input
             id="reg-name"
+            name="name"
             type="text"
-            value={form.name}
-            onChange={handleChange("name")}
-            className={inputClass(errors.name)}
+            required
+            className={inputClass}
             placeholder="Your full name"
           />
-          {errors.name && (
-            <p className="mt-1.5 text-xs text-red-500">{errors.name}</p>
-          )}
         </motion.div>
 
         {/* Email */}
@@ -200,15 +164,12 @@ export default function RegisterForm() {
           </label>
           <input
             id="reg-email"
+            name="email"
             type="email"
-            value={form.email}
-            onChange={handleChange("email")}
-            className={inputClass(errors.email)}
+            required
+            className={inputClass}
             placeholder="you@example.com"
           />
-          {errors.email && (
-            <p className="mt-1.5 text-xs text-red-500">{errors.email}</p>
-          )}
         </motion.div>
 
         {/* Date of Birth & Gender — side by side */}
@@ -221,15 +182,12 @@ export default function RegisterForm() {
               </label>
               <input
                 id="reg-dob"
+                name="dateOfBirth"
                 type="date"
-                value={form.dateOfBirth}
-                onChange={handleChange("dateOfBirth")}
+                required
                 max={new Date().toISOString().split("T")[0]}
-                className={inputClass(errors.dateOfBirth)}
+                className={inputClass}
               />
-              {errors.dateOfBirth && (
-                <p className="mt-1.5 text-xs text-red-500">{errors.dateOfBirth}</p>
-              )}
             </div>
 
             {/* Gender */}
@@ -240,9 +198,9 @@ export default function RegisterForm() {
               <div className="relative">
                 <select
                   id="reg-gender"
-                  value={form.gender}
-                  onChange={handleChange("gender")}
-                  className={`${inputClass(errors.gender)} appearance-none pr-10`}
+                  name="gender"
+                  required
+                  className={`${inputClass} appearance-none pr-10`}
                 >
                   {GENDER_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -255,9 +213,6 @@ export default function RegisterForm() {
                   className="pointer-events-none absolute right-3 top-1/2 mt-[3px] -translate-y-1/2 text-muted"
                 />
               </div>
-              {errors.gender && (
-                <p className="mt-1.5 text-xs text-red-500">{errors.gender}</p>
-              )}
             </div>
           </div>
         </motion.div>
@@ -270,14 +225,10 @@ export default function RegisterForm() {
           <div className="relative mt-1.5">
             <input
               id="reg-password"
+              name="password"
               type={showPassword ? "text" : "password"}
-              value={form.password}
-              onChange={handleChange("password")}
-              className={`w-full rounded-xl border bg-white px-4 py-3 pr-12 text-sm text-navy outline-none transition-all duration-200 focus:ring-2 ${
-                errors.password
-                  ? "border-red-300 focus:ring-red-200"
-                  : "border-gray-200 focus:border-gold focus:ring-gold/20"
-              }`}
+              required
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 pr-12 text-sm text-navy outline-none transition-all duration-200 focus:border-gold focus:ring-2 focus:ring-gold/20"
               placeholder="Minimum 8 characters"
             />
             <button
@@ -289,19 +240,16 @@ export default function RegisterForm() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
-          {errors.password && (
-            <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>
-          )}
         </motion.div>
 
         {/* Submit */}
         <motion.div custom={7} variants={fadeUp} initial="hidden" animate="show">
           <button
             type="submit"
-            disabled={loading || googleLoading}
+            disabled={isPending}
             className="relative w-full rounded-full bg-gold py-3.5 text-sm font-medium text-navy transition-all duration-300 hover:bg-gold-light hover:shadow-lg hover:shadow-gold/20 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {loading ? (
+            {isPending ? (
               <span className="flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" />
                 Creating account…

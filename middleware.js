@@ -11,17 +11,27 @@ import { NextResponse } from "next/server";
  */
 export async function middleware(request) {
   const { supabase, supabaseResponse } = createClient(request);
+  const pathname = request.nextUrl.pathname;
 
   // Refresh session — IMPORTANT: do not remove this
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isDashboard = request.nextUrl.pathname.startsWith("/dashboard");
+  const isDashboard = pathname.startsWith("/dashboard");
+  const isGuestAuthPage = ["/login", "/register"].includes(pathname);
 
   if (isDashboard && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.searchParams.set("next", pathname);
+    return NextResponse.redirect(url);
+  }
+
+  if (isGuestAuthPage && user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

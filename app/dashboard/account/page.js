@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, X, Loader2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { updatePasswordAction, updateProfileAction } from "@/app/actions/account";
 
 /**
  * Toast — Simple auto-dismissing notification
@@ -216,19 +217,16 @@ export default function AccountPage() {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (user) {
-      // Update profile in database
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          full_name: profile.name,
-          email: profile.email,
-        })
-        .eq("id", user.id);
+      const formData = new FormData();
+      formData.set("name", profile.name);
+      formData.set("email", profile.email);
 
-      if (error) {
-        setProfileErrors({ name: error.message });
+      const result = await updateProfileAction(formData);
+
+      if (result?.error) {
+        setProfileErrors({ name: result.error });
       } else {
-        setToast("Changes saved");
+        setToast(result?.success || "Changes saved");
       }
     }
 
@@ -243,15 +241,18 @@ export default function AccountPage() {
 
     setPasswordLoading(true);
 
-    const { error } = await supabase.auth.updateUser({
-      password: password.newPassword,
-    });
+    const formData = new FormData();
+    formData.set("currentPassword", password.current);
+    formData.set("newPassword", password.newPassword);
+    formData.set("confirmPassword", password.confirm);
 
-    if (error) {
-      setPasswordErrors({ current: error.message });
+    const result = await updatePasswordAction(formData);
+
+    if (result?.error) {
+      setPasswordErrors({ current: result.error });
     } else {
       setPassword({ current: "", newPassword: "", confirm: "" });
-      setToast("Password updated");
+      setToast(result?.success || "Password updated");
     }
 
     setPasswordLoading(false);

@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { BookOpen, Clock, Award, TrendingUp } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import ProgressCard from "@/components/dashboard/ProgressCard";
 import LessonCard from "@/components/dashboard/LessonCard";
-import { MOCK_USER, MOCK_PROGRESS, MOCK_RECENT_LESSONS } from "@/lib/mock-data";
+import { MOCK_PROGRESS, MOCK_RECENT_LESSONS } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
 
 /**
  * Dashboard Overview — Main dashboard page
@@ -28,12 +30,49 @@ const stats = [
 ];
 
 export default function DashboardPage() {
+  const supabase = useMemo(() => createClient(), []);
+  const [firstName, setFirstName] = useState("Student");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadUserName = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!mounted || !user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const fullName =
+        profile?.full_name ||
+        user.user_metadata?.full_name ||
+        user.email?.split("@")[0] ||
+        "Student";
+
+      if (mounted) {
+        setFirstName(fullName.split(" ").filter(Boolean)[0] || "Student");
+      }
+    };
+
+    loadUserName();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
   return (
     <div className="space-y-10">
       {/* Welcome */}
       <div>
         <h2 className="font-display text-2xl font-semibold text-navy">
-          Assalamu Alaikum, {MOCK_USER.name.split(" ")[0]}
+          Assalamu Alaikum, {firstName}
         </h2>
         <p className="mt-1 text-sm text-muted">
           Continue where you left off.
